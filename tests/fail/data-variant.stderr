@@ -1,0 +1,7 @@
+error: Cannot enumerate enum with tuple or struct variant.
+ --> $DIR/data-variant.rs:7:9
+  |
+7 |         B { id: usize, name: String },
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: Try skipping the variant with the `#[enumerate(skip)]` attribute.

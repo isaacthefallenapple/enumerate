@@ -1,0 +1,5 @@
+error: Unexpected attribute: `wrong attr`
+ --> $DIR/wrong-attr.rs:8:21
+  |
+8 |         #[enumerate(wrong attr)]
+  |                     ^^^^^^^^^^
