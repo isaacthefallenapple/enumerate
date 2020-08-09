@@ -93,3 +93,123 @@ fn test_compile_fail() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/fail/*.rs");
 }
+
+#[test]
+fn test_multiple_enumerators() {
+    #[derive(Enumerate, PartialEq, Debug)]
+    enum Color {
+        #[enumerate(rgb)]
+        Red,
+        #[enumerate(cym)]
+        Cyan,
+        #[enumerate(rgb)]
+        Green,
+        #[enumerate(cym)]
+        Yellow,
+        #[enumerate(rgb)]
+        Blue,
+        #[enumerate(cym)]
+        Magenta,
+    }
+
+    let mut rgb = Color::enumerate_rgb();
+    assert_eq!(rgb.next(), Some(&Color::Red));
+    assert_eq!(rgb.next(), Some(&Color::Green));
+    assert_eq!(rgb.next(), Some(&Color::Blue));
+    assert_eq!(rgb.next(), None);
+
+    let mut cym = Color::enumerate_cym();
+    assert_eq!(cym.next(), Some(&Color::Cyan));
+    assert_eq!(cym.next(), Some(&Color::Yellow));
+    assert_eq!(cym.next(), Some(&Color::Magenta));
+    assert_eq!(cym.next(), None);
+}
+
+#[test]
+fn test_multiple_enumerators_start() {
+    #[derive(Enumerate, PartialEq, Debug)]
+    enum Color {
+        #[enumerate(start = rgb)]
+        Red,
+        Green,
+        Blue,
+        #[enumerate(start = cym)]
+        Cyan,
+        Yellow,
+        Magenta,
+    }
+
+    let mut rgb = Color::enumerate_rgb();
+    assert_eq!(rgb.next(), Some(&Color::Red));
+    assert_eq!(rgb.next(), Some(&Color::Green));
+    assert_eq!(rgb.next(), Some(&Color::Blue));
+    assert_eq!(rgb.next(), None);
+
+    let mut cym = Color::enumerate_cym();
+    assert_eq!(cym.next(), Some(&Color::Cyan));
+    assert_eq!(cym.next(), Some(&Color::Yellow));
+    assert_eq!(cym.next(), Some(&Color::Magenta));
+    assert_eq!(cym.next(), None);
+}
+
+#[test]
+fn test_override_start() {
+    #[derive(Enumerate, PartialEq, Debug)]
+    enum Color {
+        #[enumerate(start = rgb)]
+        Red,
+        Green,
+        Blue,
+        #[enumerate(skip)]
+        _Orange,
+        #[enumerate(start = cym)]
+        Cyan,
+        Yellow,
+        Magenta,
+    }
+
+    let mut rgb = Color::enumerate_rgb();
+    assert_eq!(rgb.next(), Some(&Color::Red));
+    assert_eq!(rgb.next(), Some(&Color::Green));
+    assert_eq!(rgb.next(), Some(&Color::Blue));
+    assert_eq!(rgb.next(), None);
+
+    let mut cym = Color::enumerate_cym();
+    assert_eq!(cym.next(), Some(&Color::Cyan));
+    assert_eq!(cym.next(), Some(&Color::Yellow));
+    assert_eq!(cym.next(), Some(&Color::Magenta));
+    assert_eq!(cym.next(), None);
+}
+
+#[test]
+fn test_default() {
+    #[derive(Enumerate, PartialEq, Debug)]
+    enum Color {
+        #[enumerate(start = rgb)]
+        Red,
+        Green,
+        Blue,
+        #[enumerate(default)]
+        Orange,
+        #[enumerate(start = cym)]
+        Cyan,
+        Yellow,
+        Magenta,
+    }
+
+    let mut rgb = Color::enumerate_rgb();
+    assert_eq!(rgb.next(), Some(&Color::Red));
+    assert_eq!(rgb.next(), Some(&Color::Green));
+    assert_eq!(rgb.next(), Some(&Color::Blue));
+    assert_eq!(rgb.next(), None);
+
+    let mut cym = Color::enumerate_cym();
+    assert_eq!(cym.next(), Some(&Color::Cyan));
+    assert_eq!(cym.next(), Some(&Color::Yellow));
+    assert_eq!(cym.next(), Some(&Color::Magenta));
+    assert_eq!(cym.next(), None);
+
+    let mut default = Color::enumerate();
+    assert_eq!(default.next(), Some(&Color::Orange));
+    assert_eq!(default.next(), None);
+}
