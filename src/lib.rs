@@ -2,7 +2,8 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenTree;
-use quote::quote;
+use quote::{format_ident, quote};
+use std::collections::HashMap;
 use syn::{parse_macro_input, spanned::Spanned, DeriveInput};
 
 #[proc_macro_derive(Enumerate, attributes(enumerate))]
@@ -31,54 +32,131 @@ pub fn derive_enumerate(input: TokenStream) -> TokenStream {
         }
     };
 
-    let variants: Result<Vec<_>, _> = e.variants.iter().map(process_variant).collect();
+    let mut standard_enumerator = Vec::new();
+    let mut enumerators = HashMap::<_, Vec<_>>::new();
 
-    if variants.is_err() {
-        return TokenStream::new();
+    let mut started = None;
+    for variant in e.variants.iter().map(process_variant) {
+        if let Err(e) = variant {
+            e.emit();
+            return TokenStream::new();
+        }
+        let variant = variant.unwrap();
+        match variant {
+            Variant(_, Attr::Skipped) => continue,
+            Variant(ident, Attr::Default) => {
+                standard_enumerator.push(ident);
+            }
+            Variant(ident, Attr::Start(enumerator)) => {
+                started.replace(enumerator.clone());
+                enumerators.entry(enumerator).or_default().push(ident);
+            }
+            Variant(ident, Attr::None) => {
+                started
+                    .as_ref()
+                    .and_then(|enumerator| enumerators.get_mut(enumerator))
+                    .unwrap_or(&mut standard_enumerator)
+                    .push(ident);
+            }
+            Variant(ident, Attr::Single(enumerator)) => {
+                enumerators.entry(enumerator).or_default().push(ident);
+            }
+        }
     }
-    let variants = variants.unwrap().into_iter().filter_map(|v| v);
+
+    let enumerator_names = enumerators
+        .keys()
+        .map(|ident| format_ident!("enumerate_{}", ident));
+    let enumerator_variants = enumerators.values();
 
     (quote! {
         impl #name {
             fn enumerate() -> impl Iterator<Item = &'static #name> {
-                const VARS: &[#name] = &[#( #name::#variants ),*];
+                const VARS: &[#name] = &[#( #name::#standard_enumerator ),*];
                 VARS.iter()
             }
+
+            #(
+                fn #enumerator_names() -> impl Iterator<Item = &'static #name> {
+                    const VARS: &[#name] = &[#( #name::#enumerator_variants ),*];
+                    VARS.iter()
+                }
+            )*
         }
     })
     .into()
 }
 
-fn process_variant(v: &syn::Variant) -> Result<Option<&syn::Ident>, ()> {
+fn process_variant(v: &syn::Variant) -> Result<Variant, proc_macro::Diagnostic> {
     let syn::Variant { ident, attrs, .. } = v;
+
+    let var = match parse_attr(attrs) {
+        Err(err) => return Err(err),
+        Ok(attr) => Variant(ident.clone(), attr),
+    };
+
+    if var.1 != Attr::Skipped && v.fields != syn::Fields::Unit {
+        Err(v
+            .span()
+            .unwrap()
+            .error("Cannot enumerate enum with tuple or struct variant.")
+            .help("Try skipping the variant with the `#[enumerate(skip)]` attribute."))
+    } else {
+        Ok(var)
+    }
+}
+
+struct Variant(syn::Ident, Attr);
+
+#[derive(PartialEq)]
+enum Attr {
+    None,
+    Start(syn::Ident),
+    Single(syn::Ident),
+    Default,
+    Skipped,
+}
+
+impl syn::parse::Parse for Attr {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let err = input.error(format!("Invalid argument: `{}`.", input));
+        let ident: syn::Ident = input.parse()?;
+
+        if input.is_empty() {
+            let attr = if ident == "skip" {
+                Attr::Skipped
+            } else if ident == "default" {
+                Attr::Default
+            } else {
+                Attr::Single(ident)
+            };
+            return Ok(attr);
+        } else if ident == "start" {
+            let _: syn::Token![=] = input.parse()?;
+            let ident: syn::Ident = input.parse()?;
+            if input.is_empty() {
+                return Ok(Attr::Start(ident));
+            }
+        }
+        Err(err)
+    }
+}
+
+fn parse_attr(attrs: &[syn::Attribute]) -> Result<Attr, proc_macro::Diagnostic> {
     for attr in attrs {
         if attr.path.segments.len() == 1 && attr.path.segments[0].ident == "enumerate" {
-            let mut tokens = attr.tokens.clone().into_iter();
-            if let Some(TokenTree::Group(ref group)) = tokens.next() {
-                let mut inner = group.stream().into_iter();
-                if let Some(TokenTree::Ident(ident)) = inner.next() {
-                    if ident == "skip" && inner.next().is_none() {
-                        return Ok(None);
-                    }
-                }
-                let stream = group.stream();
-                stream
-                    .span()
-                    .unwrap()
-                    .error(format!("Unexpected attribute: `{}`", stream))
-                    .emit();
-                return Err(());
+            let mut stream = attr.tokens.clone().into_iter();
+            if let Some(TokenTree::Group(group)) = stream.next() {
+                return syn::parse2(group.stream()).map_err(|err| {
+                    group
+                        .stream()
+                        .span()
+                        .unwrap()
+                        .error(err.to_string())
+                        .note("Expected `skip`, valid identifier, or `start = <ident>`.")
+                });
             }
         }
     }
-    if v.fields != syn::Fields::Unit {
-        v.span()
-            .unwrap()
-            .error("Cannot enumerate enum with tuple or struct variant.")
-            .help("Try skipping the variant with the `#[enumerate(skip)]` attribute.")
-            .emit();
-        Err(())
-    } else {
-        Ok(Some(ident))
-    }
+    Ok(Attr::None)
 }

@@ -1,5 +1,7 @@
-error: Unexpected attribute: `wrong attr`
+error: Invalid argument: `wrong attr`.
  --> $DIR/wrong-attr.rs:8:21
   |
 8 |         #[enumerate(wrong attr)]
   |                     ^^^^^^^^^^
+  |
+  = note: Expected `skip`, valid identifier, or `start = <ident>`.
